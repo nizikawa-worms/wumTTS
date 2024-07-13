@@ -1,13 +1,16 @@
-# wkTTS
-WormKit module adding text-to-speech to Worms Armageddon multiplayer games.
+# wumTTS
+~~WormKit~~ WumKit module adding text-to-speech to Worms ~~Armageddon~~ Ultimate Mayhem multiplayer games.
 
 While enabled, chat is automatically read aloud. A different voice is chosen for each player based on their nickname.
 
+# Credit
+The original [wkTTS](https://github.com/greisane/wkTTS) module was made by [greisane](https://github.com/greisane). Have a good one, pal.
+
 # Installation
 
-Requires Worms Armageddon 3.8.1 with WormKit enabled.
+Requires Worms Ultimate Mayhem (Steam) with [WumKit](https://github.com/nizikawa-worms/WumKit) enabled.
 
-1. Download the [the latest release](https://github.com/greisane/wkTTS/releases/latest).
+1. Download the [the latest release](https://github.com/nizikawa-worms/wumTTS/releases/latest/download/wumTTS.zip).
 2. Unzip inside the game folder.
 3. Enter command `/tts` while in game.
 
@@ -21,4 +24,4 @@ The following commands are available in both lobby and game chat.
 
 # Configuration
 
-wkTTS.ini can be opened with a text editor to change the default volume or enable other options.
+wumTTS.ini can be opened with a text editor to change the default volume or enable other options.

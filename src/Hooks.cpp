@@ -38,6 +38,7 @@ void Hooks::hook(std::string name, DWORD pTarget, DWORD* pDetour, DWORD* ppOrigi
 	{
 		throw std::runtime_error(tfm::format("Failed to enable hook: %s", name));
 	}
+	debugf("Hooked %s 0x%X -> 0x%X\n", name.c_str(), pTarget, pDetour);
 }
 
 DWORD Hooks::scanPatternAndHook(const char* name, const char* pattern, const char* mask, DWORD* pDetour, DWORD* ppOriginal)

@@ -1,187 +1,69 @@
 #include "GameChat.h"
 
-#include <regex>
 #include "Hooks.h"
 #include "Debug.h"
 
-int(__fastcall* origDestroyGlobalContext)(int This, int EDX);
-int __fastcall GameChat::hookDestroyGlobalContext(int This, int EDX)
-{
-	int ret = origDestroyGlobalContext(This, EDX);
-	addrDDGame = 0;
-	return ret;
+void (__fastcall *addrChatHandler)(void *This, int EDX, void *MsgObject);
+
+void (__fastcall *origChatHandler)(void *This, int EDX, void *MsgObject);
+
+const char *getMessage(DWORD This) {
+	return *(const char **) (This + 20);
 }
 
-DWORD origConstructDDGameWrapper;
-DWORD __stdcall GameChat::hookConstructDDGameWrapper(DWORD DD_Game_a2, DWORD DD_Display_a3, DWORD DS_Sound_a4, DWORD DD_Keyboard_a5, DWORD DD_Mouse_a6, DWORD WAV_CDrom_a7, DWORD WS_GameNet_a8)
-{
-	DWORD DD_W2Wrapper, retv;
-	_asm mov DD_W2Wrapper, edi
-
-	addrDDGame = DD_Game_a2;
-	debugf("ddgame: %X\n", addrDDGame);
-
-	_asm push WS_GameNet_a8
-	_asm push WAV_CDrom_a7
-	_asm push DD_Mouse_a6
-	_asm push DD_Keyboard_a5
-	_asm push DS_Sound_a4
-	_asm push DD_Display_a3
-	_asm push DD_Game_a2
-	_asm mov edi, DD_W2Wrapper
-	_asm call origConstructDDGameWrapper
-	_asm mov retv, eax
-
-	return retv;
+const char *getFrom(DWORD This) {
+	return *(const char **) (This + 12);
 }
 
-int(__stdcall* origShowChatMessage)(DWORD ddgame, int color, char* msg, int unk);
-int __stdcall GameChat::hookShowChatMessage(DWORD ddgame, int color, char* msg, int unk)
-{
-	static const std::regex chatRgx(R"(^\[([^\]]*)\] (.*)$)");
-	static const std::regex teamChatRgx(R"(^<<([^<]*)>> (.*)$)");
-	static const std::regex anonymousRgx(R"(^(?:.* )?\[(.*)\]$)");  // Named captures would be nice
-	static const std::regex whisperToRgx(R"(^\*([^\*]*)\* (.*)$)");
-	static const std::regex whisperFromRgx(R"(^<([^<]*)> (.*)$)");
-	//static const std::regex whisperRgx(R"(^([^\.]+)\.\.([^\.]+): (.*)$)");  // Only in replays
-
-	GameChatType type;
-	std::string name, text;
-	std::cmatch matches;
-	if (strcmp(msg, "**Whisper**") == 0)
-	{
-		// Ignore other team whispers
-	}
-	else if (std::regex_search(msg, matches, chatRgx))
-	{
-		type = GameChatType::Normal;
-		name = matches[1];
-		text = matches[2];
-	}
-	else if (std::regex_search(msg, matches, teamChatRgx))
-	{
-		type = GameChatType::Team;
-		name = matches[1];
-		text = matches[2];
-	}
-	else if (std::regex_search(msg, matches, anonymousRgx))
-	{
-		type = GameChatType::Anonymous;
-		text = matches[1];
-	}
-	else if (std::regex_search(msg, matches, whisperToRgx))
-	{
-		type = GameChatType::WhisperTo;
-		name = matches[1];
-		text = matches[2];
-	}
-	else if (std::regex_search(msg, matches, whisperFromRgx))
-	{
-		type = GameChatType::WhisperFrom;
-		name = matches[1];
-		text = matches[2];
-	}
-	else if (color == 11)
-	{
-		type = GameChatType::Action;
-		text = msg;
-	}
-	else
-	{
-		type = GameChatType::System;
-		text = msg;
+void __fastcall GameChat::hookChatHandler(void *This, int EDX, void *MsgObject) {
+	GameChatType type = GameChatType::Normal;
+	const std::string name = getFrom((DWORD) MsgObject);
+	const std::string text = getMessage((DWORD) MsgObject);
+	for (const GameChatCallback &callback: chatCallbacks) {
+		callback(type, name, text);
 	}
 
-	for (GameChatCallback& callback : chatCallbacks)
-	{
-		callback(type, name, text, color);
-	}
-
-	return origShowChatMessage(ddgame, color, msg, unk);
+	origChatHandler(This, EDX, MsgObject);
 }
 
-int GameChat::onChatInput(int a1, char* msg, int a3)
-{
+int (__stdcall *origOnChatInput)(void *a1, char *a2, int a3) = nullptr;
+
+int __stdcall GameChat::hookOnChatInput(void *a1, char *msg, int a3) {
 	std::string msgs = msg;
-	for (const CommandAndCallback& cb : commandCallbacks)
-	{
-		if (msgs.starts_with(std::get<0>(cb)))
-		{
+	for (const CommandAndCallback &cb: commandCallbacks) {
+		if (msgs.starts_with(std::get<0>(cb))) {
 			std::get<1>(cb)(msgs.substr(std::get<0>(cb).length()));
 			return 1;
 		}
 	}
-	return 0;
+	return origOnChatInput(a1, msg, a3);
 }
 
-DWORD origOnChatInput = 0;
-int __stdcall callOriginalOnChatInput(int a1, char* msg, int a3)
-{
-	_asm mov ecx, a1
-	_asm mov eax, msg
-	_asm push a3
-	_asm call origOnChatInput
+void GameChat::print(const std::string &msg) {
+	debugf("%s", msg.c_str());
 }
 
-#pragma optimize("", off)
-char* onchat_eax;
-int onchat_ecx;
-void __stdcall GameChat::hookOnChatInput(int a3)
-{
-	_asm mov onchat_eax, eax
-	_asm mov onchat_ecx, ecx
-	if (!onChatInput(onchat_ecx, (char*)onchat_eax, a3))
-	{
-		callOriginalOnChatInput(onchat_ecx, onchat_eax, a3);
-	}
-}
-#pragma optimize("", on)
-
-void(__stdcall* addrShowChatMessage)(DWORD addrResourceObject, int color, char* msg, int unk);
-void GameChat::print(const std::string msg)
-{
-	if (addrDDGame)
-	{
-		const int color = 11;
-		origShowChatMessage(addrDDGame, color, (char*)msg.c_str(), 1);
-	}
-}
-
-void GameChat::install()
-{
-	Hooks::scanPatternAndHook("DestroyGlobalContext",
-		"\x6A\xFF\x68\x00\x00\x00\x00\x64\xA1\x00\x00\x00\x00\x50\x64\x89\x25\x00\x00\x00\x00\x51\x56\x8B\xF1\x89\x74\x24\x04\xC7\x06\x00\x00\x00\x00\x8B\xC6\xC7\x44\x24\x00\x00\x00\x00\x00\xE8\x00\x00\x00\x00\xA1\x00\x00\x00\x00\x83\x78\x5C\x00\x75\x07\x8B\xC6\xE8\x00\x00\x00\x00\x8B\xC6\xE8\x00\x00\x00\x00\x8B\x86\x00\x00\x00\x00\x85\xC0\x74\x09\x50\xE8\x00\x00\x00\x00\x83\xC4\x04",
-		"???????xx????xxxx????xxxxxxxxxx????xxxxx?????x????x????xxxxxxxxx????xxx????xx????xxxxxx????xxx",
-		(DWORD*)&hookDestroyGlobalContext,
-		(DWORD*)&origDestroyGlobalContext);
-	Hooks::scanPatternAndHook("ConstructDDGameWrapper",
-		"\x6A\xFF\x64\xA1\x00\x00\x00\x00\x68\x00\x00\x00\x00\x50\x64\x89\x25\x00\x00\x00\x00\x53\x8B\x5C\x24\x1C\x55\x8B\x6C\x24\x1C\x56\x8B\x74\x24\x1C\x33\xC0\x89\x86\x00\x00\x00\x00\x89\x44\x24\x14\x89\x86\x00\x00\x00\x00\x8B\xC7\xC7\x06\x00\x00\x00\x00\x89\x9E\x00\x00\x00\x00\x89\xAE\x00\x00\x00\x00\xE8\x00\x00\x00\x00",
-		"????????x????xxxx????xxxxxxxxxxxxxxxxxxx????xxxxxx????xxxx????xx????xx????x????",
-		(DWORD*)&hookConstructDDGameWrapper,
-		(DWORD*)&origConstructDDGameWrapper);
-	addrShowChatMessage = (void(__stdcall*)(DWORD, int, char*, int))Hooks::scanPatternAndHook("ShowChatMessage",
-		"\x81\xEC\x00\x00\x00\x00\x53\x55\x8B\xAC\x24\x00\x00\x00\x00\x80\xBD\x00\x00\x00\x00\x00\x8B\x85\x00\x00\x00\x00\x8B\x48\x24\x56\x8B\xB1\x00\x00\x00\x00\x57",
-		"??????xxxxx????xx?????xx????xxxxxx????x",
-		(DWORD*)&hookShowChatMessage,
-		(DWORD*)&origShowChatMessage);
+void GameChat::install() {
+	addrChatHandler = (void (__fastcall *)(void *, int, void *)) Hooks::scanPatternAndHook("ChatHandler",
+	                                                                                       "\x6A\xFF\x68\x00\x00\x00\x00\x64\xA1\x00\x00\x00\x00\x50\x64\x89\x25\x00\x00\x00\x00\x83\xEC\x24\x80\x3D\x00\x00\x00\x00\x00\x53\x55\x56\x8B\xD9\x57\x89\x5C\x24\x20\x74\x09\xC6\x05\x00\x00\x00\x00\x00\xEB\x09\x8D\x4C\x24\x18\xE8\x00\x00\x00\x00\xB8\x00\x00\x00\x00\xC7\x44\x24\x00\x00\x00\x00\x00\x66\x39\x05\x00\x00\x00\x00\x75\x11\x68\x00\x00\x00\x00\x6A\x2F\x68\x00\x00\x00\x00\xE8\x00\x00\x00\x00",
+	                                                                                       "???????xx????xxxx????xxxxx?????xxxxxxxxxxxxxx?????xxxxxxx????x????xxx?????xxx????xxx????xxx????x????",
+	                                                                                       (DWORD *) &hookChatHandler,
+	                                                                                       (DWORD *) &origChatHandler);
 	Hooks::scanPatternAndHook("OnChatInput",
-		"\x81\xEC\x00\x00\x00\x00\x55\x56\x57\x8B\xF8\x8A\x07\x84\xC0\x8B\xF1\x0F\x84\x00\x00\x00\x00\x3C\x2F\x0F\x85\x00\x00\x00\x00\x8D\x44\x24\x40",
-		"??????xxxxxxxxxxxxx????xxxx????xxxx",
-		(DWORD*)&hookOnChatInput,
-		(DWORD*)&origOnChatInput);
+	                          "\x6A\xFF\x68\x00\x00\x00\x00\x64\xA1\x00\x00\x00\x00\x50\x64\x89\x25\x00\x00\x00\x00\x83\xEC\x08\x56\x8B\x74\x24\x20\x57\x56\x8D\x4C\x24\x10\xE8\x00\x00\x00\x00\xC7\x44\x24\x00\x00\x00\x00\x00\x8D\x4C\x24\x0C\xE8\x00\x00\x00\x00\x8B\x7C\x24\x20\x56\x8B\xCF\xE8\x00\x00\x00\x00\x8B\xF0\x83\xFE\x06\x0F\x87\x00\x00\x00\x00\x0F\xB6\x86\x00\x00\x00\x00\xFF\x24\x85\x00\x00\x00\x00",
+	                          "???????xx????xxxx????xxxxxxxxxxxxxxx????xxx?????xxxxx????xxxxxxxx????xxxxxxx????xxx????xxx????",
+	                          (DWORD *) &hookOnChatInput,
+	                          (DWORD *) &origOnChatInput);
 }
 
-bool GameChat::isInGame()
-{
-	return addrDDGame != 0;
+bool GameChat::isInGame() {
+	return true;
 }
 
-void GameChat::registerCommandCallback(std::string command, CommandCallback callback)
-{
+void GameChat::registerCommandCallback(std::string command, CommandCallback callback) {
 	commandCallbacks.push_back(std::make_tuple("/" + command, callback));
 }
 
-void GameChat::registerChatCallback(GameChatCallback callback)
-{
+void GameChat::registerChatCallback(GameChatCallback callback) {
 	chatCallbacks.push_back(callback);
 }

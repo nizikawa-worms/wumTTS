@@ -142,11 +142,11 @@ hl::ModuleHandle hl::GetModuleByAddress(uintptr_t adr)
 
 std::string hl::GetModulePath(hl::ModuleHandle hModule)
 {
-    char path[MAX_PATH];
+    char path[MAX_PATH] = {0};
 
     if (GetModuleFileNameA(hModule, path, MAX_PATH) == 0)
     {
-        throw std::runtime_error("GetModuleFileName failed");
+        // throw std::runtime_error("GetModuleFileName failed");
     }
 
     return path;

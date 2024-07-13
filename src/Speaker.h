@@ -1,5 +1,5 @@
-#ifndef WKTTS_SPEAKER_H
-#define WKTTS_SPEAKER_H
+#ifndef WUMTTS_SPEAKER_H
+#define WUMTTS_SPEAKER_H
 
 #include <string>
 #include <vector>
@@ -56,4 +56,4 @@ private:
 	void work();
 };
 
-#endif //WKTTS_SPEAKER_H
+#endif //WUMTTS_SPEAKER_H

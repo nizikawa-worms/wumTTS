@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.19)
-project(wkTTS
+project(wumTTS
     VERSION "1.0.0.0"
     DESCRIPTION "Text-to-speech for game chat"
 )
@@ -14,25 +14,25 @@ add_compile_definitions(PROJECT_VERSION="${PROJECT_VERSION}")
 
 include_directories(include hacklib/include flite/inc)
 link_directories(lib)
+add_subdirectory(lib/minhook-1.3.3)
 
-add_library(wkTTS SHARED
+add_library(wumTTS SHARED
     src/dllmain.cpp
     src/Hooks.cpp
     src/Speaker.cpp
-    src/LobbyChat.cpp
     src/GameChat.cpp
     ${CMAKE_CURRENT_BINARY_DIR}/resource.rc
 )
 
 set_property(TARGET
-    wkTTS hacklib
+    wumTTS hacklib minhook
     flite_audio flite_hrg flite_regex flite_stats flite_utils flite_cg flite_lexicon flite_speech flite_synth flite_wavesynth flite_cmu_grapheme_lang
     flite_cmu_grapheme_lex flite_cmulex flite_cmu_us_kal flite_cmu_us_kal16 flite_cmu_us_slt flite_cmu_us_rms flite_cmu_us_awb flite_usenglish
     PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
-target_link_libraries(wkTTS
+target_link_libraries(wumTTS
     PUBLIC hacklib
-    PUBLIC libMinHook-x86-v141-mt
+    PUBLIC minhook
     PUBLIC flite_audio
     PUBLIC flite_hrg
     PUBLIC flite_regex
@@ -53,10 +53,3 @@ target_link_libraries(wkTTS
     PUBLIC flite_cmu_us_awb
     PUBLIC flite_usenglish
 )
-
-# set(GAME_DIR "D:/WA")
-# add_custom_command(TARGET wkTTS
-#     POST_BUILD
-#     COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:wkTTS> ${GAME_DIR}/$<TARGET_FILE_NAME:wkTTS>
-#     COMMAND "${GAME_DIR}/WA.exe" "wa://?id=tts?pass=tts"
-# )

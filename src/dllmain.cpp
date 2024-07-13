@@ -3,9 +3,10 @@
 #include <string>
 #include <vector>
 #include <array>
+#include <map>
 #include <tinyformat.h>
+
 #include "Speaker.h"
-#include "LobbyChat.h"
 #include "GameChat.h"
 #include "Debug.h"
 
@@ -14,158 +15,85 @@ bool readPlayerName = false;
 bool readPlayerChat = false;
 bool readSystemMessages = false;
 bool speaking = true;
-std::vector<Speaker*> speakers;
+std::vector<Speaker *> speakers;
 std::thread loaderThread;
 
-unsigned short crc16(const unsigned char* data_p, unsigned char length)
-{
+unsigned short crc16(const unsigned char *data_p, unsigned char length) {
 	// From https://stackoverflow.com/a/23726131
 	unsigned char x;
 	unsigned short crc = 0xFFFF;
 
-	while (length--)
-	{
+	while (length--) {
 		x = crc >> 8 ^ *data_p++;
 		x ^= x >> 4;
-		crc = (crc << 8) ^ ((unsigned short)(x << 12)) ^ ((unsigned short)(x << 5)) ^ ((unsigned short)x);
+		crc = (crc << 8) ^ ((unsigned short) (x << 12)) ^ ((unsigned short) (x << 5)) ^ ((unsigned short) x);
 	}
 	return crc;
 }
 
-void printChat(std::string msg)
-{
-	if (GameChat::isInGame())
-	{
-		GameChat::print(msg);
-	}
-	else if (LobbyChat::isInLobby())
-	{
-		LobbyChat::print(msg);
-	}
+void printChat(const std::string &msg) {
+	debugf("%s\n", msg.c_str());
+	// GameChat::print(msg);
 }
 
-void speak(std::string name, std::string text)
-{
-	if (!speaking)
-	{
+void speak(const std::string &name, const std::string &text) {
+	if (!speaking) {
 		return;
 	}
-	if(loaderThread.joinable())
-	{
+	if (loaderThread.joinable()) {
 		loaderThread.join();
 	}
-
-	Speaker* chosen = nullptr;
-	for (Speaker* speaker : speakers)
-	{
-		if (speaker->name == name)
-		{
+	Speaker *chosen = nullptr;
+	for (Speaker *speaker: speakers) {
+		if (speaker->name == name) {
 			chosen = speaker;
 			break;
-		}
-		else if (!chosen && !speaker->isBusy())
-		{
+		} else if (!chosen && !speaker->isBusy()) {
 			chosen = speaker;
 		}
 	}
-
-	if (chosen)
-	{
+	if (chosen) {
 		int voiceIndex = 0;
-		if (!name.empty())
-		{
+		if (!name.empty()) {
 			// Select a voice based on the name
-			const unsigned short hash = crc16((const unsigned char*)(name.c_str()), name.length());
+			const unsigned short hash = crc16((const unsigned char *) (name.c_str()), name.length());
 			voiceIndex = hash % Speaker::getNumVoices();
 		}
-
 		chosen->name = name;
 		chosen->say(text, voiceIndex);
 	}
 }
 
-void speakLobbyChatMessage(std::string type, std::string name, std::string team, std::string text)
-{
-	if (type == "GLB" && readPlayerChat)
-	{
+std::map<std::string, std::string> playermap;
+
+void speakGameChatMessage(GameChatType type, const std::string &name, const std::string &text) {
+	if(playermap.contains(name)) {
+		speak(playermap[name], readPlayerName ? tfm::format("%s says: %s", name, text) : text);
+	} else {
 		speak(name, readPlayerName ? tfm::format("%s says: %s", name, text) : text);
 	}
-	else if (type == "SYS" && readSystemMessages)
-	{
-		// Unfortunately this includes /me messages, there is no way of telling them apart
-		speak("", text);
-	}
+
 }
 
-void speakGameChatMessage(GameChatType type, std::string name, std::string text, int color)
-{
-	static const std::array<std::string, 2> systemMsgsEndWith = {
-		"has turned on the crate finder feature of wkRubberWorm (http://worms2d.info/RubberWorm).",
-		"has turned off the crate finder.",
-	};
-
-	if (type == GameChatType::Normal && readPlayerChat)
-	{
-		speak(name, readPlayerName ? tfm::format("%s says: %s", name, text) : text);
-	}
-	else if (type == GameChatType::Team && readPlayerChat)
-	{
-		speak(name, readPlayerName ? tfm::format("%s says to team: %s", name, text) : text);
-	}
-	else if (type == GameChatType::Anonymous && readPlayerChat)
-	{
-		speak(name, readPlayerName ? tfm::format("Anonymous message: %s", text) : text);
-	}
-	else if (type == GameChatType::WhisperTo && readPlayerChat)
-	{
-		// TODO whats my name
-		speak("", readPlayerName ? tfm::format("Whisper to %s: %s", name, text) : text);
-	}
-	else if (type == GameChatType::WhisperFrom && readPlayerChat)
-	{
-		speak(name, readPlayerName ? tfm::format("Whisper from %s: %s", name, text) : text);
-	}
-	else if (type == GameChatType::Action
-		&& (readSystemMessages || std::none_of(systemMsgsEndWith.begin(), systemMsgsEndWith.end(), [&text](std::string s) { return text.ends_with(s); })))
-	{
-		speak("", text);
-	}
-	else if (type == GameChatType::System && readSystemMessages)
-	{
-		speak("", text);
-	}
-}
-
-void shutUp(std::string args)
-{
-	for (Speaker* speaker : speakers)
-	{
+void shutUp(const std::string &args) {
+	for (Speaker *speaker: speakers) {
 		speaker->shutUp();
 	}
 }
 
-void setVolume(std::string args)
-{
-	try
-	{
+void setVolume(const std::string &args) {
+	try {
 		const int volume = std::clamp(std::stoi(args), 0, 100);
-		for (Speaker* speaker : speakers)
-		{
+		for (Speaker *speaker: speakers) {
 			speaker->setVolume(volume / 100.f);
 		}
 		printChat(tfm::format("Text to speech volume set to %d%%.", volume));
-	}
-	catch (std::exception)
-	{
+	} catch (std::exception) {
 		speaking = !speaking;
-		if (speaking)
-		{
+		if (speaking) {
 			printChat("Text to speech enabled.");
-		}
-		else
-		{
-			for (Speaker* speaker : speakers)
-			{
+		} else {
+			for (Speaker *speaker: speakers) {
 				speaker->shutUp();
 			}
 			printChat("Text to speech disabled.");
@@ -173,15 +101,51 @@ void setVolume(std::string args)
 	}
 }
 
-BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved)
-{
+std::map<std::string, std::string> readPlayermapSection(const std::string &filePath) {
+	// credit: chatgpt
+	std::map<std::string, std::string> playermap;
+	const std::string section = "Playermap";
+	const DWORD bufferSize = 4096;
+	char keyBuffer[bufferSize] = {0};
+	char valueBuffer[bufferSize] = {0};
+
+	// Get all keys in the section
+	DWORD keysRead = GetPrivateProfileStringA(section.c_str(), nullptr, "", keyBuffer, bufferSize, filePath.c_str());
+	if (keysRead == 0) {
+		debugf("Failed to read keys from section: %s\n", section.c_str());
+		return playermap;
+	}
+
+	char *keyPtr = keyBuffer;
+	while (*keyPtr) {
+		std::string key = keyPtr;
+
+		// Get the value for the key
+		DWORD valueRead = GetPrivateProfileStringA(section.c_str(), key.c_str(), "", valueBuffer, bufferSize, filePath.c_str());
+		if (valueRead == 0) {
+			debugf("Failed to read value for key: : %s\n", key.c_str());
+			keyPtr += (key.length() + 1);
+			continue;
+		}
+
+		std::string value = valueBuffer;
+		playermap[key] = value;
+
+		// Move to the next key
+		keyPtr += (key.length() + 1);
+	}
+
+	return playermap;
+}
+
+BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved) {
 	switch (ul_reason_for_call) {
 		case DLL_PROCESS_ATTACH:
 			try {
 				auto start = std::chrono::high_resolution_clock::now();
 				decltype(start) finish;
 
-				const char iniPath[] = ".\\wkTTS.ini";
+				const char iniPath[] = ".\\wumTTS.ini";
 				const int moduleEnabled = GetPrivateProfileIntA("General", "EnableModule", 1, iniPath);
 				if (!moduleEnabled) {
 					return TRUE;
@@ -192,17 +156,14 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 				readPlayerChat = GetPrivateProfileIntA("TTS", "ReadPlayerChat", 1, iniPath);
 				readSystemMessages = GetPrivateProfileIntA("TTS", "ReadSystemMessages", 0, iniPath);
 
-				LobbyChat::install();
-				LobbyChat::registerChatCallback(&speakLobbyChatMessage);
-				LobbyChat::registerCommandCallback("shutup", &shutUp);
-				LobbyChat::registerCommandCallback("tts", &setVolume);
+				playermap = readPlayermapSection(iniPath);
 
 				GameChat::install();
 				GameChat::registerChatCallback(&speakGameChatMessage);
 				GameChat::registerCommandCallback("shutup", &shutUp);
 				GameChat::registerCommandCallback("tts", &setVolume);
 
-				loaderThread = std::thread([=](){
+				loaderThread = std::thread([=]() {
 					try {
 						const int maxVoices = 50;
 						char voicePath[MAX_PATH];
@@ -218,8 +179,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 						for (int i = 0; i < maxSpeakers; i++) {
 							speakers.push_back(new Speaker(volume));
 						}
-					}
-					catch (std::exception &e) {
+					} catch (std::exception &e) {
 						MessageBoxA(0, e.what(), PROJECT_NAME " " PROJECT_VERSION " (" __DATE__ ")", MB_ICONERROR);
 					}
 				});
@@ -227,9 +187,8 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 
 				finish = std::chrono::high_resolution_clock::now();
 				std::chrono::duration<double> elapsed = finish - start;
-				debugf("wkTTS startup took %lf seconds\n", elapsed.count());
-			}
-			catch (std::exception &e) {
+				debugf("wumTTS startup took %lf seconds\n", elapsed.count());
+			} catch (const std::exception &e) {
 				MessageBoxA(0, e.what(), PROJECT_NAME " " PROJECT_VERSION " (" __DATE__ ")", MB_ICONERROR);
 			}
 			break;

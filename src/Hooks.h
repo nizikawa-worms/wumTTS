@@ -1,5 +1,5 @@
-#ifndef WKTTS_HOOKS_H
-#define WKTTS_HOOKS_H
+#ifndef WUMTTS_HOOKS_H
+#define WUMTTS_HOOKS_H
 
 #include <string>
 
@@ -16,4 +16,4 @@ private:
 	static inline bool initialized = false;
 };
 
-#endif //WKTTS_HOOKS_H
+#endif //WUMTTS_HOOKS_H
